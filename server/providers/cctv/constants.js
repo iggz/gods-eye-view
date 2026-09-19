@@ -679,9 +679,13 @@ export const ATLANTA_ANCHORS = [
   { lat: 33.8446, lon: -84.4741 }, // I-285 / I-75 north (Cumberland)
   { lat: 33.6407, lon: -84.4277 }, // Hartsfield-Jackson
 ];
-/** Atlanta sits on the Piedmont ridge, high for an eastern US city. The
- * client's one-shot ground snap corrects this prior where 3D tiles load. */
-export const ATLANTA_GROUND_ELEVATION_M = 320;
+/** Fallback ground elevation, used only where a precomputed height is missing
+ * (a camera the feed has moved, or one added since the last precompute); it is
+ * not part of the pose hash, so changing it does not invalidate those entries.
+ * 271 m is the median measured under the 250 metro Atlanta cameras against
+ * Google 3D Tiles (range 211-308 m) — the Piedmont ridge, high for an eastern
+ * US city, but not the 320 m first guessed. */
+export const ATLANTA_GROUND_ELEVATION_M = 271;
 /** Hard ceiling on the Georgia 511 catalog body. The statewide list is well
  * under a megabyte; this only exists so an upstream that streams an unbounded
  * body cannot be buffered without limit. */
