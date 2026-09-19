@@ -658,6 +658,34 @@ export const WSDOT_ANCHORS = [
   { lat: 47.6062, lon: -122.3321 }, // Seattle
   { lat: 47.6588, lon: -117.426 }, // Spokane
 ];
+/** Georgia 511 (GDOT NaviGAtor): the same CARS/511 platform as Ontario 511 —
+ * identical `/api/v2/get/cameras` catalog and `/map/Cctv/<id>` still frames —
+ * but key-gated. `key` is a required query parameter, and the service
+ * throttles to ten calls every 60 s; the 15-minute catalog cache holds this
+ * pack near four calls an hour, far under that ceiling. The key is injected at
+ * request time and never logged, so no error path may print the endpoint. */
+export const ATLANTA_511_CAMERAS_URL =
+  'https://511ga.org/api/v2/get/cameras?format=json';
+export const ATLANTA_511_IMAGE_ORIGIN = 'https://511ga.org/map/Cctv/';
+export const DEFAULT_ATLANTA_MAX_SOURCES = 250;
+/** The 511GA catalog is STATEWIDE (550+ cameras from Savannah to Chattanooga).
+ * These anchors are what make this an Atlanta pack rather than a Georgia one:
+ * metro cameras sort first and the cap drops the rest. Widen the cap or add
+ * anchors to reach the other metros. */
+export const ATLANTA_ANCHORS = [
+  { lat: 33.7537, lon: -84.3903 }, // Five Points / Downtown Connector
+  { lat: 33.789, lon: -84.388 }, // Midtown
+  { lat: 33.849, lon: -84.364 }, // Buckhead
+  { lat: 33.8446, lon: -84.4741 }, // I-285 / I-75 north (Cumberland)
+  { lat: 33.6407, lon: -84.4277 }, // Hartsfield-Jackson
+];
+/** Atlanta sits on the Piedmont ridge, high for an eastern US city. The
+ * client's one-shot ground snap corrects this prior where 3D tiles load. */
+export const ATLANTA_GROUND_ELEVATION_M = 320;
+/** Hard ceiling on the Georgia 511 catalog body. The statewide list is well
+ * under a megabyte; this only exists so an upstream that streams an unbounded
+ * body cannot be buffered without limit. */
+export const ATLANTA_MAX_CATALOG_BYTES = 4 * 1024 * 1024;
 
 /** Camera CATALOGS change rarely; 15 min keeps multi-megabyte upstream list refetches (Austin rows.json + 4 Caltrans districts + TfL + Ontario 511) infrequent. Frames are fetched per-request and are unaffected. */
 export const CCTV_SOURCE_CACHE_MS = 15 * 60 * 1000;

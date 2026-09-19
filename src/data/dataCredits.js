@@ -468,6 +468,12 @@ export const DATA_CREDITS = [
       'camera list via the <a href="https://opendatahub.com/" target="_blank" rel="noopener">Open Data Hub</a> (NOI Techpark)',
   },
   {
+    key: 'ga-511-cctv',
+    html:
+      'CCTV cameras &amp; frames (Atlanta / Georgia): ' +
+      '<a href="https://511ga.org/" target="_blank" rel="noopener">Georgia DOT 511 (NaviGAtor)</a> (courtesy)',
+  },
+  {
     key: 'gbfs',
     html:
       'Bikeshare availability: GBFS operator feeds ' +

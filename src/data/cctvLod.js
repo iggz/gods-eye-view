@@ -47,6 +47,10 @@ const PROVIDER_STATIC_REFRESH_MS = Object.freeze({
   // Autobrennero (A22) refreshes its stills about once a minute (Last-Modified
   // tracks the minute); 3 min matches the other highway packs.
   'autostrada del brennero': 3 * 60 * 1000,
+  // 511GA throttles to ten API calls per 60 s. That budget is for the
+  // CATALOG, not frames, but GDOT stills refresh about once a minute and
+  // 3 min matches the other highway packs.
+  'georgia dot 511': 3 * 60 * 1000,
 });
 
 /**

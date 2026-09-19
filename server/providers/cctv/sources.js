@@ -81,6 +81,12 @@ import {
   DEFAULT_HK_MAX_SOURCES,
   HK_ANCHORS,
   HK_MAX_CATALOG_BYTES,
+  ATLANTA_511_CAMERAS_URL,
+  ATLANTA_511_IMAGE_ORIGIN,
+  DEFAULT_ATLANTA_MAX_SOURCES,
+  ATLANTA_ANCHORS,
+  ATLANTA_GROUND_ELEVATION_M,
+  ATLANTA_MAX_CATALOG_BYTES,
   CCTV_SOURCE_FETCH_TIMEOUT_MS,
   TARKTEE_FETCH_TIMEOUT_MS,
   DELDOT_CCTV_URL,
@@ -4108,6 +4114,243 @@ export async function loadHoustonSourcesFromOpenData() {
   } catch (error) {
     console.warn(
       '[CCTV] Houston camera download error:',
+      error?.message || error,
+    );
+    return [];
+  }
+}
+
+/**
+ * Is a Georgia 511 developer key configured?
+ *
+ * The 511GA API rejects an unkeyed request with HTTP 400 `Invalid Key`, so the
+ * pack gates on this in catalog.js rather than firing a request that can only
+ * fail. Every other CCTV pack is keyless; this is the one that can be
+ * installed and still be legitimately off.
+ *
+ * @returns {string} Trimmed key, or '' when unset.
+ */
+export function atlantaApiKey() {
+  return String(process.env.CCTV_ATLANTA_KEY || '').trim();
+}
+
+/**
+ * Georgia bounding box.
+ *
+ * The 511GA catalog is statewide, so this is only a sanity guard against a
+ * swapped lat/lon or a null-island row — ATLANTA_ANCHORS is what actually
+ * narrows the pack to the metro.
+ *
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {boolean}
+ */
+export function isLikelyGeorgiaCoordinate(lat, lon) {
+  return (
+    isPlausibleLatLon(lat, lon) &&
+    lat >= 30.3 &&
+    lat <= 35.1 &&
+    lon >= -85.7 &&
+    lon <= -80.8
+  );
+}
+
+/**
+ * Pin a Georgia 511 camera view URL to the official still-image host.
+ *
+ * `Views[].Url` is already a direct still (`image/png`, `max-age=60`) rather
+ * than a viewer page, so it is registered as-is once the host and path shape
+ * are verified. Anything off-origin is refused rather than proxied, the same
+ * pin the Ontario and TfL packs apply.
+ *
+ * @param {string} value - Upstream view URL.
+ * @returns {string} Canonical 511ga.org still URL, or '' if not accepted.
+ */
+export function normalizeAtlantaCctvUrl(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    const match = /^\/map\/Cctv\/([^/?#]+)$/.exec(parsed.pathname);
+    if (!match) return '';
+    const host = parsed.hostname.toLowerCase();
+    if (
+      parsed.protocol !== 'https:' ||
+      (host !== '511ga.org' && !host.endsWith('.traveliq.co'))
+    ) {
+      return '';
+    }
+    const viewId = decodeURIComponent(match[1]);
+    if (!/^[A-Za-z0-9_.-]+$/.test(viewId)) return '';
+    return `${ATLANTA_511_IMAGE_ORIGIN}${encodeURIComponent(viewId)}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Select the best Georgia 511 still view for a camera.
+ *
+ * A camera may publish several views; only `Status: "Enabled"` ones are live,
+ * and a description mentioning the camera is down is deprioritized rather than
+ * dropped, so a transiently-flagged camera still gets a frame to try.
+ *
+ * @param {Array<object>} views
+ * @returns {{url:string,description:string}|null}
+ */
+export function pickAtlantaCctvView(views) {
+  const enabled = (Array.isArray(views) ? views : [])
+    .filter(
+      (view) =>
+        String(view?.Status || view?.status || '')
+          .trim()
+          .toLowerCase() === 'enabled',
+    )
+    .map((view) => ({
+      url: normalizeAtlantaCctvUrl(view?.Url || view?.url),
+      description: String(view?.Description || view?.description || '').trim(),
+    }))
+    .filter((view) => view.url);
+  if (!enabled.length) return null;
+  return (
+    enabled.find((view) => !/\bdown\b/i.test(view.description)) || enabled[0]
+  );
+}
+
+/**
+ * One Georgia 511 camera record -> one catalog source, or null.
+ *
+ * Unlike Austin — which has to infer a facing from street names — 511GA
+ * publishes a dedicated `Direction` field ("Northbound", "Southbound", ...).
+ * That is a real facing, so it is parsed with `allowBare` and earns the
+ * high-confidence pose. Records without one fall back to the view description,
+ * then to the shared id-hash bearing at low confidence, which the operator
+ * corrects with the calibration gizmo.
+ *
+ * @param {object} record - Raw 511GA camera object.
+ * @returns {?object}
+ */
+export function atlantaCameraToSource(record) {
+  if (!record || typeof record !== 'object') return null;
+  const rawId = String(record?.Id ?? record?.id ?? '').trim();
+  if (!rawId) return null;
+  const lat = toFiniteNumber(record?.Latitude ?? record?.latitude);
+  const lon = toFiniteNumber(record?.Longitude ?? record?.longitude);
+  if (!isLikelyGeorgiaCoordinate(lat, lon)) return null;
+
+  const view = pickAtlantaCctvView(record?.Views || record?.views);
+  if (!view) return null;
+
+  const cameraId = `ga-${rawId}`;
+  const location = String(record?.Location || record?.location || '').trim();
+  const roadway = String(record?.Roadway || record?.roadway || '').trim();
+  const named = String(record?.Name || record?.name || '').trim();
+  const name = location || named || roadway || `Georgia 511 Camera ${rawId}`;
+
+  let heading = directionToHeading(
+    record?.Direction ?? record?.direction,
+    true,
+  );
+  if (!Number.isFinite(heading)) {
+    heading = directionToHeading(view.description, true);
+  }
+  const hasHeading = Number.isFinite(heading);
+
+  return {
+    id: cameraId,
+    name,
+    city: 'Atlanta',
+    cityId: 'atlanta',
+    provider: 'Georgia DOT 511',
+    lat,
+    lon,
+    headingDeg: hasHeading ? heading : fallbackHeadingFromId(cameraId),
+    headingConfidence: hasHeading ? 'high' : 'low',
+    pitchDeg: hasHeading ? -24 : -18,
+    fovDeg: hasHeading ? 56 : 44,
+    rangeM: hasHeading ? 210 : 145,
+    mountHeightM: hasHeading ? 10 : 8,
+    groundElevationM: ATLANTA_GROUND_ELEVATION_M,
+    feedType: 'image',
+    url: view.url,
+    snapshotUrl: view.url,
+    sourceKind: 'ga-511-open-data',
+    license: 'Public Georgia DOT (511GA / NaviGAtor) traffic camera frame',
+    // Unselected-label code: the roadway crossing, so a camera at rest reads
+    // as a place rather than as its id.
+    code: cameraDisplayCode(name.toUpperCase()),
+  };
+}
+
+/**
+ * Fetch Georgia DOT traffic cameras from the 511GA API, then keep the ones
+ * nearest metro Atlanta.
+ *
+ * Requires CCTV_ATLANTA_KEY (free developer key from
+ * https://511ga.org/developers/doc). The key is injected into the query string
+ * at request time and MUST NOT reach a log line — every diagnostic here prints
+ * a status code or an error message, never the endpoint.
+ *
+ * @returns {Promise<Array<object>>} Normalized camera source objects.
+ */
+export async function loadAtlantaSourcesFromOpenData() {
+  const key = atlantaApiKey();
+  if (!key) return [];
+  try {
+    const endpoint = new URL(
+      process.env.CCTV_ATLANTA_CAMERAS_URL || ATLANTA_511_CAMERAS_URL,
+    );
+    endpoint.searchParams.set('key', key);
+    const resp = await fetch(endpoint, {
+      headers: { Accept: 'application/json' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    // A response this loader will not read still owns its transport until the
+    // body is released, so every rejection path cancels before returning.
+    const discard = async () => {
+      try {
+        await resp.body?.cancel();
+      } catch {
+        /* no-op */
+      }
+      return [];
+    };
+    if (resp.status >= 300 && resp.status < 400) {
+      console.warn(
+        '[CCTV] Georgia 511 catalog redirected; redirects are not followed',
+      );
+      return discard();
+    }
+    if (!resp.ok) {
+      // 400 here is almost always `Invalid Key`; 429 is the ten-calls-per-60s
+      // throttle. Neither is worth echoing the keyed URL for.
+      console.warn('[CCTV] Georgia 511 camera download failed:', resp.status);
+      return discard();
+    }
+    const rows = await readResponseJsonCapped(resp, ATLANTA_MAX_CATALOG_BYTES);
+    if (!Array.isArray(rows)) return [];
+
+    const cameras = [];
+    const seen = new Set();
+    for (const record of rows) {
+      const camera = atlantaCameraToSource(record);
+      if (!camera || seen.has(camera.id)) continue;
+      seen.add(camera.id);
+      cameras.push(camera);
+    }
+    const maxRaw = Number(
+      process.env.CCTV_ATLANTA_MAX_SOURCES || DEFAULT_ATLANTA_MAX_SOURCES,
+    );
+    const maxCount = Number.isFinite(maxRaw)
+      ? Math.max(8, Math.min(600, Math.floor(maxRaw)))
+      : DEFAULT_ATLANTA_MAX_SOURCES;
+    const prioritized = prioritizeSources(cameras, maxCount, ATLANTA_ANCHORS);
+    console.log(
+      `[CCTV] Loaded Georgia 511 camera sources: ${cameras.length} (using nearest ${prioritized.length} to metro Atlanta)`,
+    );
+    return prioritized;
+  } catch (error) {
+    console.warn(
+      '[CCTV] Georgia 511 camera download error:',
       error?.message || error,
     );
     return [];

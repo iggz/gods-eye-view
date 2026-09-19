@@ -38,6 +38,8 @@ import {
   loadFloridaSourcesFromOpenData,
   loadHoustonSourcesFromOpenData,
   loadA22SourcesFromOpenDataHub,
+  loadAtlantaSourcesFromOpenData,
+  atlantaApiKey,
 } from './sources.js';
 
 /** Env kill switch: unset or anything but "0" means enabled. */
@@ -206,6 +208,15 @@ const LIVE_PACKS = [
     name: 'a22',
     enabled: () => envEnabled('CCTV_A22_ENABLED'),
     load: loadA22SourcesFromOpenDataHub,
+  },
+  {
+    // The one key-gated pack: 511GA answers an unkeyed request with HTTP 400,
+    // so a missing CCTV_ATLANTA_KEY turns the pack off here rather than
+    // spending a request per refresh to be told no.
+    name: 'atlanta',
+    enabled: () =>
+      envEnabled('CCTV_ATLANTA_ENABLED') && Boolean(atlantaApiKey()),
+    load: loadAtlantaSourcesFromOpenData,
   },
 ];
 /**
