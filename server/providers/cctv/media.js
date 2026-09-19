@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
 import { hashSeed, escapeXml, pinnedCameraUrl } from './normalize.js';
 import {
   A22_IMAGE_ORIGIN,
@@ -917,4 +918,60 @@ export async function fetchCctvImageFromUpstream(
     clearTimeout(timeoutId);
     controller.abort();
   }
+}
+
+/**
+ * Upstream "this camera is dead" placeholder images, by SHA-256 of the body.
+ *
+ * Most camera providers report a dead camera with a non-200 or a dropped
+ * connection, which fails `fetchCctvImageFromUpstream` and lets the frame route
+ * fall through to Street View. The CARS/511 platform does not: it answers 200
+ * with `image/png` and a fixed card saying the feed is gone. Accepting those as
+ * frames pins a black rectangle onto the camera's projection plane and skips
+ * the fallback chain entirely.
+ *
+ * The three below were observed on 511GA (19 of 60 sampled metro Atlanta
+ * cameras on 2026-09-19). The same vendor runs Ontario 511 and other 511 sites,
+ * so the check is NOT scoped to one pack — an exact hash match cannot false
+ * positive on a real frame, so a shared list costs nothing and covers siblings.
+ *
+ * Adding one: fetch the frame, confirm by eye that it is a provider card rather
+ * than a dark night frame, then append `sha256(body)` with a comment.
+ */
+export const CCTV_OFFLINE_PLACEHOLDER_SHA256 = new Set([
+  // 450x253, black with white "STREAM NOT AVAILABLE" (7,574 B)
+  'e8a76259f04aec9fd381287ce8ac553ab68c5b1249751b12e258c87c6116a1e2',
+  // 540x311, grey card, "No live camera feed at this time" (15,136 B)
+  'e608c39b77e5480ce13682b571638e4246ff519dd6c79402c393db5e273aab19',
+  // 450x253, black with red "Camera error, try testing PTZ in Maintenance
+  // section." — an operator diagnostic the public feed leaks (11,955 B)
+  '5f23ff5d7824bbed2dd9ce6d21b0f6c10e2463365b0dcab22ea530b49f03afb4',
+]);
+
+/**
+ * Cheap size prefilter for the placeholder check.
+ *
+ * The known cards are 7.5-15 KB. The smallest real 511GA frame measured across
+ * a 60-camera sample was 107 KB, so this bound sits an order of magnitude clear
+ * of both, and anything above it skips hashing altogether.
+ */
+export const CCTV_PLACEHOLDER_MAX_BYTES = 40 * 1024;
+
+/**
+ * Is this frame body a known upstream offline card rather than a real frame?
+ *
+ * Exact-hash only, deliberately: a size or "mostly dark pixels" heuristic would
+ * eventually throw away a real night frame, and showing Street View in place of
+ * a working camera is a worse failure than showing one dead card.
+ *
+ * @param {Buffer|Uint8Array|null|undefined} body - Decoded frame bytes.
+ * @returns {boolean}
+ */
+export function isOfflinePlaceholderFrame(body) {
+  if (!body || typeof body.length !== 'number') return false;
+  if (body.length === 0 || body.length > CCTV_PLACEHOLDER_MAX_BYTES) {
+    return false;
+  }
+  const digest = createHash('sha256').update(body).digest('hex');
+  return CCTV_OFFLINE_PLACEHOLDER_SHA256.has(digest);
 }

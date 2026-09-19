@@ -10,6 +10,7 @@ import {
   fetchTxdotSnapshot,
   fetchCctvMediaUpstream,
   watchDownstreamClose,
+  isOfflinePlaceholderFrame,
 } from './cctv/media.js';
 import {
   CCTV_FRAME_FETCH_TIMEOUT_MS,
@@ -707,7 +708,16 @@ export function cctvProxy({ sourceRoot = process.cwd() } = {}) {
           );
           return;
         }
-        if (upstreamImage?.ok) {
+        // A 511-platform upstream answers a DEAD camera with 200 and a fixed
+        // "no feed" card instead of an error, so an ok response is not yet a
+        // frame. Treating the card as a miss is what lets the Street View and
+        // synthetic fallbacks below run for those cameras at all. This is the
+        // provider-agnostic form of the MLIT adjustment check above.
+        const upstreamIsOfflineCard =
+          Boolean(upstreamImage?.ok) &&
+          isOfflinePlaceholderFrame(upstreamImage.body);
+
+        if (upstreamImage?.ok && !upstreamIsOfflineCard) {
           setHealth(cameraId, {
             status: upstreamImage.stale ? 'degraded' : 'ok',
             sourceKind: 'snapshot',
@@ -726,6 +736,13 @@ export function cctvProxy({ sourceRoot = process.cwd() } = {}) {
           res.end(upstreamImage.body);
           return;
         }
+
+        // A camera the provider says is offline is a different failure from an
+        // upstream that could not be reached, and the operator wants to tell
+        // them apart in the health report and on the fallback card.
+        const upstreamMiss = upstreamIsOfflineCard
+          ? 'Upstream reports the camera offline'
+          : 'Upstream unavailable';
 
         // The Street View fallback spends the Google key, so a forwarded
         // request (whose client this server cannot see) gets the placeholder,
@@ -748,7 +765,7 @@ export function cctvProxy({ sourceRoot = process.cwd() } = {}) {
             status: 'degraded',
             sourceKind: 'streetview',
             label: 'Google Street View',
-            message: 'Fallback Street View frame',
+            message: `Fallback Street View frame (${upstreamMiss})`,
           });
           res.writeHead(200, {
             'Content-Type': sv.contentType,
@@ -763,18 +780,18 @@ export function cctvProxy({ sourceRoot = process.cwd() } = {}) {
           cameraId,
           label,
           city,
-          status: source?.url
-            ? 'UPSTREAM UNAVAILABLE'
-            : 'NO UPSTREAM CONFIGURED',
+          status: !source?.url
+            ? 'NO UPSTREAM CONFIGURED'
+            : upstreamIsOfflineCard
+              ? 'CAMERA OFFLINE'
+              : 'UPSTREAM UNAVAILABLE',
         });
 
         setHealth(cameraId, {
           status: 'degraded',
           sourceKind: 'synthetic',
           label: source?.provider || 'Synthetic fallback',
-          message: source?.url
-            ? 'Upstream unavailable'
-            : 'No source configured',
+          message: source?.url ? upstreamMiss : 'No source configured',
         });
 
         res.writeHead(200, {
