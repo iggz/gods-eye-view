@@ -965,13 +965,18 @@ export const CCTV_PLACEHOLDER_MAX_BYTES = 40 * 1024;
  * a working camera is a worse failure than showing one dead card.
  *
  * @param {Buffer|Uint8Array|null|undefined} body - Decoded frame bytes.
+ * @param {Set<string>} [digests] - Digest set to match against. Injectable so a
+ *   test can exercise the hash path without mutating the shared registry.
  * @returns {boolean}
  */
-export function isOfflinePlaceholderFrame(body) {
+export function isOfflinePlaceholderFrame(
+  body,
+  digests = CCTV_OFFLINE_PLACEHOLDER_SHA256,
+) {
   if (!body || typeof body.length !== 'number') return false;
   if (body.length === 0 || body.length > CCTV_PLACEHOLDER_MAX_BYTES) {
     return false;
   }
   const digest = createHash('sha256').update(body).digest('hex');
-  return CCTV_OFFLINE_PLACEHOLDER_SHA256.has(digest);
+  return digests.has(digest);
 }

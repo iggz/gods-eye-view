@@ -8,14 +8,9 @@ import {
   isOfflinePlaceholderFrame,
 } from '../../server/providers/cctv/media.js';
 
-/** A body whose SHA-256 is one of the registered offline cards. */
-const knownCard = () => {
-  // Search a tiny keyspace for a body matching a listed digest is impossible,
-  // so instead assert the function against the digests themselves by stubbing
-  // a body whose hash we compute the same way the implementation does.
-  for (const digest of CCTV_OFFLINE_PLACEHOLDER_SHA256) return digest;
-  throw new Error('no placeholder digests registered');
-};
+/** A one-entry digest set built from `body`, for the injectable-set tests. */
+const digestsFor = (body) =>
+  new Set([createHash('sha256').update(body).digest('hex')]);
 
 test('the registered digests are well-formed and non-empty', () => {
   assert.ok(
@@ -25,22 +20,14 @@ test('the registered digests are well-formed and non-empty', () => {
   for (const digest of CCTV_OFFLINE_PLACEHOLDER_SHA256) {
     assert.match(digest, /^[0-9a-f]{64}$/, digest);
   }
-  assert.ok(knownCard());
 });
 
 test('a body matching a registered digest is detected', () => {
-  // Build a body, register its digest the way a maintainer would, and confirm
-  // the matcher agrees — this exercises the hash path without shipping a
-  // 15 KB binary fixture.
+  // Exercises the hash path against an injected set, so the shared registry is
+  // never mutated and the tests cannot leak state into one another.
   const body = Buffer.from('pretend offline card bytes');
-  const digest = createHash('sha256').update(body).digest('hex');
-  CCTV_OFFLINE_PLACEHOLDER_SHA256.add(digest);
-  try {
-    assert.equal(isOfflinePlaceholderFrame(body), true);
-  } finally {
-    CCTV_OFFLINE_PLACEHOLDER_SHA256.delete(digest);
-  }
-  // Once de-registered it is an ordinary frame again.
+  assert.equal(isOfflinePlaceholderFrame(body, digestsFor(body)), true);
+  // Against the real registry the same body is an ordinary frame.
   assert.equal(isOfflinePlaceholderFrame(body), false);
 });
 
@@ -56,17 +43,14 @@ test('a real frame is never mistaken for a placeholder', () => {
 });
 
 test('the size prefilter skips hashing anything frame-sized', () => {
-  // Bodies past the bound short-circuit before the digest is taken. Register a
-  // large body's digest and confirm it is still NOT reported, proving the
-  // prefilter ran rather than the hash.
+  // A body past the bound short-circuits before the digest is taken: matching
+  // it against its OWN digest still reports false, which only the prefilter
+  // can produce.
   const big = Buffer.alloc(CCTV_PLACEHOLDER_MAX_BYTES + 1, 3);
-  const digest = createHash('sha256').update(big).digest('hex');
-  CCTV_OFFLINE_PLACEHOLDER_SHA256.add(digest);
-  try {
-    assert.equal(isOfflinePlaceholderFrame(big), false);
-  } finally {
-    CCTV_OFFLINE_PLACEHOLDER_SHA256.delete(digest);
-  }
+  assert.equal(isOfflinePlaceholderFrame(big, digestsFor(big)), false);
+  // One byte under the bound, the same construction matches.
+  const small = Buffer.alloc(CCTV_PLACEHOLDER_MAX_BYTES - 1, 3);
+  assert.equal(isOfflinePlaceholderFrame(small, digestsFor(small)), true);
 });
 
 test('the bound sits clear of both the cards and real frames', () => {
