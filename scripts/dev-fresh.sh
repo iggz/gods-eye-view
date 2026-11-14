@@ -10,14 +10,16 @@ PORT="${PORT:-4173}"
 # should not be reachable from the network unless explicitly requested.
 # Set HOST=0.0.0.0 to opt in to LAN exposure (a warning is printed).
 HOST="${HOST:-localhost}"
-# CCTV source packs (all keyless): Austin (~815 live upstream), Caltrans
+# CCTV source packs: Austin (~815 live upstream), Caltrans
 # districts 4,7,11,3 = SF/LA/San Diego/Sacramento (~1,860 live upstream),
 # TfL London JamCams (~870 live upstream), Ontario 511 (~944 live upstream,
 # including Kitchener-area highways), and Fintraffic Finland weathercams
 # (~2,260 live presets). Caps keep the densest cores per pack; override
 # per-run for lighter/heavier loads. Kill switches: CCTV_CALTRANS_DISTRICTS='',
 # CCTV_TFL_ENABLED=0, CCTV_ONTARIO_ENABLED=0, CCTV_FINTRAFFIC_ENABLED=0 and
-# CCTV_CALGARY_ENABLED=0 (Open Calgary, ~215 live upstream).
+# CCTV_CALGARY_ENABLED=0 (Open Calgary, ~215 live upstream), and
+# CCTV_ATLANTA_ENABLED=0 (Georgia 511; it also needs CCTV_ATLANTA_KEY, without
+# which the pack stays off on its own).
 CCTV_AUSTIN_MAX_SOURCES="${CCTV_AUSTIN_MAX_SOURCES:-250}"
 # Use `-` not `:-` so an explicit empty string (the documented kill switch)
 # is preserved rather than replaced by the default. Still set-u-safe when unset.
@@ -44,6 +46,8 @@ CCTV_NSW_ENABLED="${CCTV_NSW_ENABLED:-1}"
 CCTV_NSW_MAX_SOURCES="${CCTV_NSW_MAX_SOURCES:-250}"
 CCTV_CALGARY_ENABLED="${CCTV_CALGARY_ENABLED:-1}"
 CCTV_CALGARY_MAX_SOURCES="${CCTV_CALGARY_MAX_SOURCES:-220}"
+CCTV_ATLANTA_ENABLED="${CCTV_ATLANTA_ENABLED:-1}"
+CCTV_ATLANTA_MAX_SOURCES="${CCTV_ATLANTA_MAX_SOURCES:-250}"
 CCTV_MAX_SOURCES="${CCTV_MAX_SOURCES:-7350}"
 
 # Capture which provider credentials genuinely came from the parent shell
@@ -407,6 +411,8 @@ put_env CCTV_NSW_ENABLED "${CCTV_NSW_ENABLED}"
 put_env CCTV_NSW_MAX_SOURCES "${CCTV_NSW_MAX_SOURCES}"
 put_env CCTV_CALGARY_ENABLED "${CCTV_CALGARY_ENABLED}"
 put_env CCTV_CALGARY_MAX_SOURCES "${CCTV_CALGARY_MAX_SOURCES}"
+put_env CCTV_ATLANTA_ENABLED "${CCTV_ATLANTA_ENABLED}"
+put_env CCTV_ATLANTA_MAX_SOURCES "${CCTV_ATLANTA_MAX_SOURCES}"
 put_env CCTV_MAX_SOURCES "${CCTV_MAX_SOURCES}"
 put_env OPENSKY_AUTH_MODE "${OPENSKY_AUTH_MODE}"
 put_env_if_set OPENSKY_CREDENTIALS_FILE "${OPENSKY_CREDENTIALS_FILE}"
