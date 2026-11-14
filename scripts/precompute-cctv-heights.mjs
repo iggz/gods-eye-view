@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -10,6 +11,35 @@ import {
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const SAMPLE_KEYS = ['mount', ...SUPPORT_KEYS];
 const BATCH_SIZES = [16, 4, 1];
+/** Where Chrome lives on a stock macOS install — this script's original default. */
+const MACOS_CHROME =
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+/**
+ * Resolve the browser Puppeteer should launch for the sampling session.
+ *
+ * The path used to be hardcoded to the macOS Chrome bundle, which made the
+ * script unrunnable on Windows and Linux (it aborts before sampling with
+ * "Browser was not found at the configured executablePath"). Order now:
+ * an explicit override, then the macOS default when it is actually installed,
+ * then `undefined` — which hands the choice to Puppeteer and lets it use the
+ * Chrome it manages itself.
+ *
+ * @param {NodeJS.ProcessEnv} [env=process.env]
+ * @param {NodeJS.Platform} [platform=process.platform]
+ * @returns {string|undefined} Path to launch, or undefined to let Puppeteer pick.
+ */
+export function browserExecutablePath(
+  env = process.env,
+  platform = process.platform,
+) {
+  const explicit = String(
+    env.GEV_CHROME || env.PUPPETEER_EXECUTABLE_PATH || '',
+  ).trim();
+  if (explicit) return explicit;
+  if (platform === 'darwin' && existsSync(MACOS_CHROME)) return MACOS_CHROME;
+  return undefined;
+}
 const DEADLINE_MS = 90_000;
 
 /** Extract the served nominal pose (the values the catalog ships). */
@@ -389,8 +419,7 @@ async function main() {
       const { default: puppeteer } = await import('puppeteer');
       browser = await puppeteer.launch({
         headless: false,
-        executablePath:
-          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        executablePath: browserExecutablePath(),
         protocolTimeout: 600000,
         args: [
           '--no-sandbox',

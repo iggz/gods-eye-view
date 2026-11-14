@@ -1,5 +1,11 @@
 # Changelog
 
+- Let the CCTV ground-height precompute run outside macOS. Its Chrome path was
+  hardcoded to the macOS bundle, so `scripts/precompute-cctv-heights.mjs`
+  aborted on Windows and Linux before sampling. It now honours `GEV_CHROME` or
+  `PUPPETEER_EXECUTABLE_PATH`, falls back to the macOS bundle only when it is
+  installed, and otherwise lets Puppeteer use the browser it manages.
+
 - Distinguish PARTIAL vessel snapshots from STALE data in the layer panel, with
   accepted-record counts and unchanged retention, freshness and outage safeguards.
 
